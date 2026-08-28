@@ -20,4 +20,4 @@ jobs:
           dotnet-version: '9.0.x'
 
       - name: Test
-        run: dotnet test BSolitaire.sln -c Release --logger 'console;verbosity=normal'
+        run: dotnet test BMinesweeper.sln -c Release --logger 'console;verbosity=normal'

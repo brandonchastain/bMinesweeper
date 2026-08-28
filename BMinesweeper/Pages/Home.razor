@@ -1,0 +1,89 @@
+@page "/"
+@implements IDisposable
+@inject IJSRuntime JS
+@inject ILogger<Home> Logger
+
+<div id="board" tabindex="0"
+     @onclick="HandleClick"
+     @oncontextmenu="HandleContextMenu" @oncontextmenu:preventDefault="true"
+     @onkeydown="HandleKeyDown" @onkeydown:preventDefault="true">
+    <BECanvas @ref="canvasRef" />
+</div>
+
+@code {
+    // The host component owns the plumbing: it wires the JS animation frame loop and
+    // browser events to the game, and nothing else. Rules go in Game/Minesweeper.cs.
+    private readonly Minesweeper game = new();
+
+    private BECanvasComponent canvasRef = default!;
+    private CanvasDrawer? drawer;
+    private DotNetObjectReference<Home>? selfRef;
+    private bool faulted;
+    private bool rendered;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        rendered = true;
+        drawer = new CanvasDrawer(await canvasRef.CreateCanvas2DAsync());
+        selfRef = DotNetObjectReference.Create(this);
+        await JS.InvokeVoidAsync("bMinesweeper.start", selfRef);
+    }
+
+    /// <summary>
+    /// The viewport changed. The game is told in CSS pixels and never hears about the
+    /// device pixel ratio — the canvas is scaled for it in JS.
+    /// </summary>
+    [JSInvokable]
+    public void OnResize(double width, double height, double pixelRatio) =>
+        game.Resize(width, height);
+
+    [JSInvokable]
+    public async Task OnFrame(double timestampMs)
+    {
+        if (faulted || drawer is null)
+        {
+            return;
+        }
+
+        try
+        {
+            game.Update(TimeSpan.FromMilliseconds(timestampMs));
+
+            // The board is static almost all the time and the canvas keeps the last frame,
+            // so redrawing an unchanged board is pure waste.
+            if (!game.NeedsRedraw)
+            {
+                return;
+            }
+
+            await drawer.Draw(game);
+            game.MarkClean();
+        }
+        catch (Exception ex)
+        {
+            // Stop the loop on the first fault so the console isn't flooded with one copy
+            // of the same exception per frame.
+            faulted = true;
+            Logger.LogError(ex, "Game loop faulted");
+        }
+    }
+
+    private void HandleClick(MouseEventArgs e) => game.OnClick(e.OffsetX, e.OffsetY);
+
+    private void HandleContextMenu(MouseEventArgs e) => game.OnFlag(e.OffsetX, e.OffsetY);
+
+    private void HandleKeyDown(KeyboardEventArgs e) => game.OnKeyDown(e.Code);
+
+    // The markup is one static div and a canvas, and the picture inside it is painted
+    // imperatively from the frame loop. Blazor re-renders a component after every event
+    // handler it owns, so without this each click and keystroke walks the render tree to
+    // produce the markup it produced last time.
+    protected override bool ShouldRender() => !rendered;
+
+    public void Dispose() => selfRef?.Dispose();
+}

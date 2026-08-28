@@ -2,9 +2,9 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "bsolitaire",
+      "name": "bminesweeper",
       "runtimeExecutable": "dotnet",
-      "runtimeArgs": ["run", "--project", "BSolitaire", "--urls", "http://localhost:5098"],
+      "runtimeArgs": ["run", "--project", "BMinesweeper", "--urls", "http://localhost:5098"],
       "port": 5098,
       "autoPort": true
     }

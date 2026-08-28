@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <!-- viewport-fit=cover lets the board reach under a phone's rounded corners; the CSS
+         then insets it by the safe areas, which is the only way to use the full screen
+         without putting a cell somewhere unreachable. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <title>bMinesweeper</title>
+
+    <!-- Installed to a home screen the board gets the whole screen rather than the whole
+         screen minus a URL bar. That is sixty-odd pixels of height, and height is what the
+         cell size is competing for. -->
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="theme-color" content="#2b2b33" />
+    <link rel="manifest" href="manifest.json" />
+    <link rel="icon" href="icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="icon.svg" />
+    <base href="/" />
+    <link rel="stylesheet" href="css/app.css" />
+</head>
+
+<body>
+    <div id="app">Loading...</div>
+
+    <script src="_framework/blazor.webassembly.js"></script>
+    <script src="_content/Blazor.Extensions.Canvas/blazor.extensions.canvas.js"></script>
+    <script src="js/game.js"></script>
+</body>
+
+</html>
