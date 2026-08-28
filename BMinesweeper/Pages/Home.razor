@@ -4,8 +4,7 @@
 @inject ILogger<Home> Logger
 
 <div id="board" tabindex="0"
-     @onclick="HandleClick"
-     @oncontextmenu="HandleContextMenu" @oncontextmenu:preventDefault="true"
+     @oncontextmenu:preventDefault="true"
      @onkeydown="HandleKeyDown" @onkeydown:preventDefault="true">
     <BECanvas @ref="canvasRef" />
 </div>
@@ -42,6 +41,18 @@
     public void OnResize(double width, double height, double pixelRatio) =>
         game.Resize(width, height);
 
+    /// <summary>
+    /// A tap or left click: reveal. Pointer input is routed through JS rather than
+    /// Blazor's @onclick because a touch device has to distinguish a tap from a press,
+    /// and only the code holding the timer can tell them apart.
+    /// </summary>
+    [JSInvokable]
+    public void OnTap(double x, double y) => game.OnClick(x, y);
+
+    /// <summary>A right click or a long press: flag.</summary>
+    [JSInvokable]
+    public void OnLongPress(double x, double y) => game.OnFlag(x, y);
+
     [JSInvokable]
     public async Task OnFrame(double timestampMs)
     {
@@ -72,10 +83,6 @@
             Logger.LogError(ex, "Game loop faulted");
         }
     }
-
-    private void HandleClick(MouseEventArgs e) => game.OnClick(e.OffsetX, e.OffsetY);
-
-    private void HandleContextMenu(MouseEventArgs e) => game.OnFlag(e.OffsetX, e.OffsetY);
 
     private void HandleKeyDown(KeyboardEventArgs e) => game.OnKeyDown(e.Code);
 

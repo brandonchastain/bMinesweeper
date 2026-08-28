@@ -38,6 +38,91 @@ window.bMinesweeper = (() => {
         dotNet.invokeMethodAsync('OnResize', width, height, dpr);
     }
 
+
+    // How long a press has to be held to count as a flag, and how far the finger may
+    // stray first. The slop is generous because a finger held still on glass still moves
+    // a few pixels, and stingy enough that a flick reads as a scroll attempt, not a flag.
+    const LONG_PRESS_MS = 450;
+    const MOVE_SLOP_PX = 12;
+
+    let press = null;
+
+    function boardPoint(event) {
+        // The game reads coordinates as board pixels, and the canvas starts exactly where
+        // the board element does, so the element's own rect is the origin.
+        const rect = canvas.getBoundingClientRect();
+        return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+    }
+
+    function cancelPress() {
+        if (press) {
+            clearTimeout(press.timer);
+            press = null;
+        }
+    }
+
+    function flag(point) {
+        // A flag on touch has no visible cursor behind it, so the phone confirms the
+        // press landed. Absent on iOS, which is why it is not the only feedback.
+        navigator.vibrate?.(20);
+        dotNet.invokeMethodAsync('OnLongPress', point.x, point.y);
+    }
+
+    function onPointerDown(event) {
+        cancelPress();
+
+        // Only the primary button starts a press. A right click is handled on the
+        // contextmenu event instead, which is the one event every browser agrees to send
+        // for it.
+        if (event.button !== 0) {
+            return;
+        }
+
+        const point = boardPoint(event);
+
+        press = {
+            id: event.pointerId,
+            point,
+            startX: event.clientX,
+            startY: event.clientY,
+            flagged: false,
+            timer: setTimeout(() => {
+                // Fires while the finger is still down: the flag appears under the finger
+                // rather than when it lifts, which is what makes the press feel answered.
+                if (press) {
+                    press.flagged = true;
+                    flag(press.point);
+                }
+            }, LONG_PRESS_MS),
+        };
+    }
+
+    function onPointerMove(event) {
+        if (!press || event.pointerId !== press.id) {
+            return;
+        }
+
+        // Dragged too far to be a press on one cell. Reveal is dropped too — the player
+        // moved off what they aimed at.
+        if (Math.hypot(event.clientX - press.startX, event.clientY - press.startY) > MOVE_SLOP_PX) {
+            cancelPress();
+        }
+    }
+
+    function onPointerUp(event) {
+        if (!press || event.pointerId !== press.id) {
+            return;
+        }
+
+        const { flagged, point } = press;
+        cancelPress();
+
+        // A press that already flagged must not also reveal on release.
+        if (!flagged) {
+            dotNet.invokeMethodAsync('OnTap', point.x, point.y);
+        }
+    }
+
     function frame(timestamp) {
         // Chained rather than fire-and-forget: a slow frame delays the next one instead of
         // queueing up interop calls behind it.
@@ -61,6 +146,26 @@ window.bMinesweeper = (() => {
             window.addEventListener('resize', resize);
             window.addEventListener('orientationchange', resize);
             window.visualViewport?.addEventListener('resize', resize);
+
+            board.addEventListener('pointerdown', onPointerDown);
+            board.addEventListener('pointermove', onPointerMove);
+            board.addEventListener('pointerup', onPointerUp);
+            board.addEventListener('pointercancel', cancelPress);
+            board.addEventListener('pointerleave', cancelPress);
+
+            // On a mouse this is the right click, and flagging from it is the whole
+            // desktop story. On a phone it is Android's own long-press menu arriving on
+            // top of the flag the timer already placed, so it is suppressed either way and
+            // a press that already flagged does not flag twice.
+            board.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+
+                if (!press?.flagged) {
+                    flag(boardPoint(e));
+                }
+
+                cancelPress();
+            });
 
             board.focus();
             requestAnimationFrame(frame);

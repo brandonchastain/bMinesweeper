@@ -24,11 +24,13 @@ html, body {
     outline: none;
     -webkit-tap-highlight-color: transparent;
 
-    /* The browser must not claim a tap for scrolling/zooming, and a press must not select
-       the page. */
-    touch-action: manipulation;
+    /* none, not manipulation: the browser must not wait to see whether a press becomes a
+       pan or a double-tap zoom, because that wait is exactly the window the long press
+       lives in. A press must not select the page or raise iOS's callout either. */
+    touch-action: none;
     user-select: none;
     -webkit-user-select: none;
+    -webkit-touch-callout: none;
 }
 
 #board canvas {
