@@ -12,37 +12,16 @@ public sealed class Minesweeper
     private double width;
     private double height;
     private TimeSpan last;
+    private HashSet<(int Column, int Row)> visitedCells = new();
 
-    /// <summary>Gets the board's width in cells.</summary>
     public int Columns { get; private set; }
-
-    /// <summary>Gets the board's height in cells.</summary>
     public int Rows { get; private set; }
-
-    /// <summary>Gets how many mines are hidden on the board.</summary>
     public int Mines { get; private set; }
-
-    /// <summary>Gets where each cell is drawn, in CSS pixels.</summary>
     public BoardLayout Layout { get; private set; }
-
-    /// <summary>Gets the state of the game as a whole.</summary>
     public GameState State { get; private set; } = GameState.Playing;
-
-    /// <summary>
-    /// Gets a value indicating whether the picture on screen is out of date. The board is
-    /// static almost all the time, so a frame that changed nothing draws nothing.
-    /// </summary>
     public bool NeedsRedraw { get; private set; } = true;
-
-    /// <summary>Gets how long the current game has been running.</summary>
     public TimeSpan Elapsed { get; private set; }
-
-    /// <summary>Gets the mine count less the flags planted — the number on the counter.</summary>
     public int MinesRemaining => this.Mines - this.Count(static c => c.Flagged);
-
-    /// <summary>Gets the cell at a grid position.</summary>
-    /// <param name="column">Cell column.</param>
-    /// <param name="row">Cell row.</param>
     public Cell this[int column, int row] => this.cells[column, row];
 
     /// <summary>Deals a fresh board. Mines are not placed until the first reveal.</summary>
@@ -60,6 +39,7 @@ public sealed class Minesweeper
         this.Elapsed = TimeSpan.Zero;
         this.Relayout();
         this.NeedsRedraw = true;
+        this.visitedCells.Clear();
     }
 
     /// <summary>The viewport changed size. Told in CSS pixels; DPI is the drawer's problem.</summary>
@@ -111,6 +91,11 @@ public sealed class Minesweeper
 
         // TODO: reveal the cell — flood-fill the run of zeroes, lose on a mine, and win
         // once every cell that is not a mine is open.
+
+        this.visitedCells.Clear();
+        this.DFS(column, row, FloodFill);
+
+        this.cells[column, row].Revealed = true;
         this.NeedsRedraw = true;
     }
 
@@ -156,10 +141,111 @@ public sealed class Minesweeper
             return;
         }
 
-        this.minesPlaced = true;
+        bool isSafe = true;
+        int randCol = -1;
+        int randRow = -1;
 
-        // TODO: bury this.Mines mines at random, skipping the 3x3 around the first click,
-        // then fill in every cell's Adjacent count.
+        for (int i = 0; i < this.Mines; i++)
+        {
+            isSafe = true;
+
+            while (isSafe)
+            {
+                randCol = Random.Shared.Next(this.Columns);
+                randRow = Random.Shared.Next(this.Rows);
+
+                // re-roll if the random cell is the safe cell or already has a mine
+                isSafe = Math.Abs(randCol - safeColumn) <= 1 && Math.Abs(randRow - safeRow) <= 1;
+                isSafe |= this.cells[randCol, randRow].Mine;
+            }
+
+            this.cells[randCol, randRow].Mine = true;
+        }
+
+        this.visitedCells.Clear();
+        this.DFS(0, 0, FillAdjacent);
+
+        this.minesPlaced = true;
+    }
+
+    private void DFS(int col, int row, Action<int, int> act)
+    {
+        if (visitedCells.Contains((col, row)))
+        {
+            return;
+        }
+        
+        this.visitedCells.Add((col, row));
+
+        if (col < 0 || col >= this.Columns || row < 0 || row >= this.Rows)
+        {
+            return;
+        }
+
+        if (this.cells[col, row].Mine)
+        {
+            return;
+        }
+
+        act(col, row);
+    }
+
+    private void FillAdjacent(int col, int row)
+    {
+        int adjacentMines = 0;
+        for (int c = col - 1; c <= col + 1; c++)
+        {
+            for (int r = row - 1; r <= row + 1; r++)
+            {
+                if (c >= 0 && c < this.Columns && r >= 0 && r < this.Rows)
+                {
+                    if (r != row || c != col)
+                    {
+                        DFS(c, r, FillAdjacent);
+                    }
+
+                    if (this.cells[c, r].Mine)
+                    {
+                        adjacentMines++;
+                    }
+                }
+            }
+        }
+
+        this.cells[col, row].Adjacent = adjacentMines;
+    }
+
+    private void FloodFill(int col, int row)
+    {
+        if (this.cells[col, row].Adjacent > 0)
+        {
+            this.cells[col, row].Revealed = true;
+            return;
+        }
+
+        this.cells[col, row].Revealed = true;
+
+        for (int c = col - 1; c <= col + 1; c++)
+        {
+            if (c >= 0 && c < this.Columns && row >= 0 && row < this.Rows)
+            {
+                if (c != col)
+                {
+                    DFS(c, row, FloodFill);
+                }
+            }
+        }
+
+        for (int r = row - 1; r <= row + 1; r++)
+        {
+            if (col >= 0 && col < this.Columns && r >= 0 && r < this.Rows)
+            {
+                if (r != row)
+                {
+                    DFS(col, r, FloodFill);
+                }
+            }
+        }
     }
 
     private void Relayout()
