@@ -17,7 +17,7 @@ html, body {
        canvas has to start exactly where the element does, because pointer coordinates
        arrive relative to the element and the game reads them as board pixels. */
     position: fixed;
-    top: env(safe-area-inset-top, 0px);
+    top: calc(env(safe-area-inset-top, 0px) + var(--toolbar-height));
     right: env(safe-area-inset-right, 0px);
     bottom: env(safe-area-inset-bottom, 0px);
     left: env(safe-area-inset-left, 0px);
@@ -35,4 +35,122 @@ html, body {
 
 #board canvas {
     display: block;
+}
+
+/* Windows 95 chrome, and the whole classic look is this one idea: a raised control is
+   light on its top and left and dark on its bottom and right, a sunken one is the
+   reverse, and nothing is ever rounded. */
+:root {
+    --toolbar-height: 88px;
+    --face-size: 40px;
+    --silver: #c0c0c0;
+    --shadow: #808080;
+    --highlight: #ffffff;
+}
+
+#toolbar {
+    /* Fixed above the board, which is inset by exactly this height, so the two tile the
+       viewport and neither can scroll the page. */
+    position: fixed;
+    top: env(safe-area-inset-top, 0px);
+    right: env(safe-area-inset-right, 0px);
+    left: env(safe-area-inset-left, 0px);
+    height: var(--toolbar-height);
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 6px;
+    background: var(--silver);
+    color: #000;
+    font-family: 'MS Sans Serif', Tahoma, Verdana, system-ui, sans-serif;
+    border-bottom: 2px solid var(--shadow);
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: manipulation;
+}
+
+#toolbar .panel {
+    /* The status panel is sunken into the face of the window, with the counters sunken
+       again inside it. */
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 6px;
+    border: 2px solid;
+    border-color: var(--shadow) var(--highlight) var(--highlight) var(--shadow);
+}
+
+#toolbar .led {
+    /* The seven-segment counters: dead-red digits on black, and monospaced so a rolling
+       clock does not shuffle its own digits sideways. */
+    font-family: 'DSEG7', ui-monospace, 'Courier New', monospace;
+    font-size: 26px;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: 1px;
+    color: #f00;
+    background: #000;
+    padding: 3px 4px;
+    border: 2px solid;
+    border-color: var(--shadow) var(--highlight) var(--highlight) var(--shadow);
+}
+
+#toolbar .face {
+    width: var(--face-size);
+    height: var(--face-size);
+    flex: none;
+    font-size: 22px;
+    line-height: 1;
+    padding: 0;
+    cursor: pointer;
+    background: var(--silver);
+    border: 3px solid;
+    border-color: var(--highlight) var(--shadow) var(--shadow) var(--highlight);
+}
+
+#toolbar .levels {
+    display: flex;
+    gap: 4px;
+}
+
+#toolbar .level {
+    /* The difficulty that is in play is drawn pressed in, which is the classic way a
+       control says 'this is the one you are on'. */
+    flex: 1;
+    padding: 4px 0;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    cursor: pointer;
+    color: #000;
+    background: var(--silver);
+    border: 2px solid;
+    border-color: var(--highlight) var(--shadow) var(--shadow) var(--highlight);
+}
+
+#toolbar .face:active,
+#toolbar .level:active,
+#toolbar .level.on {
+    border-color: var(--shadow) var(--highlight) var(--highlight) var(--shadow);
+}
+
+#toolbar .level.on {
+    background: #b0b0b0;
+}
+
+.haptic-switch {
+    /* The iOS haptic shim (see game.js). Kept in the layout and merely invisible, because
+       WebKit will not fire the switch's haptic for a control it is not rendering — so
+       display: none, visibility: hidden, and zero size are all off the table. */
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 1px;
+    height: 1px;
+    margin: 0;
+    opacity: 0;
+    pointer-events: none;
 }
