@@ -3,13 +3,13 @@ using Blazor.Extensions.Canvas.Canvas2D;
 namespace BMinesweeper.Game;
 
 /// <summary>
-/// Draws the game to a 2D canvas. Deliberately plain: every cell is a rectangle and a
-/// glyph, drawn straight to the visible canvas. If a frame ever gets expensive, the fix is
-/// the usual one — find what is not changing, draw it once to an off-screen canvas, and
-/// blit it afterwards.
+/// Draws the game to a 2D canvas. Every cell is a rectangle and a glyph.
 ///
-/// Not batched: Blazor.Extensions.Canvas' BeginBatchAsync/EndBatchAsync never completed
-/// here, and since the frame loop waits on this call the whole loop stopped with it.
+/// What costs anything here is not the drawing — a whole board rasterizes in a fraction of
+/// a millisecond — but the trip out to JS, at roughly 300us per awaited call. So the two
+/// things this class does about it are to make the calls cheaper and to make fewer of them:
+/// batched, so the round trips collapse into one, and told by the game which cells actually
+/// changed, so a flag repaints one cell instead of the several hundred around it.
 /// </summary>
 public sealed class CanvasDrawer : IGameDrawer
 {
@@ -30,12 +30,33 @@ public sealed class CanvasDrawer : IGameDrawer
     {
         var layout = game.Layout;
 
-        await this.canvas.SetFillStyleAsync("#2b2b33");
-        await this.canvas.FillRectAsync(0, 0, 4000, 4000);
+        await this.canvas.BeginBatchAsync();
 
+        // Set on both paths rather than once at startup: a resize rebuilds the context, so
+        // a repaint of two cells cannot assume the font it wants is still the one in place.
         await this.canvas.SetTextAlignAsync(Blazor.Extensions.Canvas.Canvas2D.TextAlign.Center);
         await this.canvas.SetTextBaselineAsync(TextBaseline.Middle);
         await this.canvas.SetFontAsync($"bold {Math.Round(layout.CellSize * 0.55)}px system-ui, sans-serif");
+
+        if (game.NeedsFullRedraw)
+        {
+            await this.DrawBoard(game, layout);
+        }
+        else
+        {
+            foreach (var (column, row) in game.DirtyCells)
+            {
+                await this.DrawCell(game, game[column, row], layout, column, row);
+            }
+        }
+
+        await this.canvas.EndBatchAsync();
+    }
+
+    private async Task DrawBoard(Minesweeper game, BoardLayout layout)
+    {
+        await this.canvas.SetFillStyleAsync("#2b2b33");
+        await this.canvas.FillRectAsync(0, 0, 4000, 4000);
 
         for (int row = 0; row < layout.Rows; row++)
         {
@@ -44,7 +65,9 @@ public sealed class CanvasDrawer : IGameDrawer
                 await this.DrawCell(game, game[column, row], layout, column, row);
             }
         }
-        
+
+        // A second pass, because a mine's border is drawn wider than its cell and would be
+        // painted over by any neighbour still to come in the first one.
         for (int row = 0; row < layout.Rows; row++)
         {
             for (int column = 0; column < layout.Columns; column++)

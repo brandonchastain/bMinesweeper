@@ -16,6 +16,11 @@ public sealed class Minesweeper
     private TimeSpan last;
     private HashSet<(int Column, int Row)> visitedCells = new();
 
+    // Which cells changed since the picture was last painted. A reveal or a flag touches a
+    // handful of cells out of hundreds, and repainting the rest costs a JS interop round
+    // trip each — so the drawer is told what moved rather than left to repaint the board.
+    private readonly List<(int Column, int Row)> dirty = new();
+
     public int Columns { get; private set; }
     public int Rows { get; private set; }
     public int Mines { get; private set; }
@@ -24,7 +29,16 @@ public sealed class Minesweeper
     public Difficulty Difficulty { get; private set; } = Difficulty.Medium;
     public BoardLayout Layout { get; private set; }
     public GameState State { get; private set; } = GameState.Playing;
-    public bool NeedsRedraw { get; private set; } = true;
+
+    /// <summary>Gets a value indicating whether the whole board has to be repainted.</summary>
+    public bool NeedsFullRedraw { get; private set; } = true;
+
+    /// <summary>Gets the cells that changed since the last paint, when the board is not being repainted whole.</summary>
+    public IReadOnlyList<(int Column, int Row)> DirtyCells => this.dirty;
+
+    /// <summary>Gets a value indicating whether there is anything at all to repaint.</summary>
+    public bool NeedsRedraw => this.NeedsFullRedraw || this.dirty.Count > 0;
+
     public TimeSpan Elapsed { get; private set; }
     /// <summary>Mines the player has yet to account for: buried mines, less flags planted.</summary>
     public int MinesRemaining => this.Mines - this.Count(static c => c.Flagged && !c.Revealed);
@@ -46,7 +60,7 @@ public sealed class Minesweeper
         this.State = GameState.Playing;
         this.Elapsed = TimeSpan.Zero;
         this.Relayout();
-        this.NeedsRedraw = true;
+        this.MarkFullRedraw();
         this.visitedCells.Clear();
     }
 
@@ -73,7 +87,7 @@ public sealed class Minesweeper
         }
 
         this.Relayout();
-        this.NeedsRedraw = true;
+        this.MarkFullRedraw();
     }
 
     /// <summary>Deals a fresh board sized to the current viewport.</summary>
@@ -102,14 +116,17 @@ public sealed class Minesweeper
         if (this.State == GameState.Playing && this.minesPlaced && this.last != TimeSpan.Zero)
         {
             this.Elapsed += timestamp - this.last;
-            this.NeedsRedraw = true;
         }
 
         this.last = timestamp;
     }
 
     /// <summary>Marks the picture as current. Called by the host after it draws.</summary>
-    public void MarkClean() => this.NeedsRedraw = false;
+    public void MarkClean()
+    {
+        this.NeedsFullRedraw = false;
+        this.dirty.Clear();
+    }
 
     /// <summary>A left click, in board CSS pixels: reveal.</summary>
     /// <param name="x">Board x, in CSS pixels.</param>
@@ -138,7 +155,9 @@ public sealed class Minesweeper
         this.visitedCells.Clear();
         FloodFill(column, row);
 
-        this.cells[column, row].Revealed = true;
+        // The flood declines to open a mine or a numbered cell; the cell that was actually
+        // clicked opens regardless.
+        this.Reveal(column, row);
 
         if (this.cells[column, row].Mine)
         {
@@ -150,8 +169,6 @@ public sealed class Minesweeper
             this.State = GameState.Won;
             this.RevealMines();
         }
-
-        this.NeedsRedraw = true;
     }
 
     private void RevealMines()
@@ -166,6 +183,11 @@ public sealed class Minesweeper
                 }
             }
         }
+
+        // Every mine grows a border thicker than the cell it sits in, so the strokes spill
+        // over their neighbours and a per-cell repaint would leave pieces of them behind.
+        // This happens once per game, so painting the board whole costs nothing worth saving.
+        this.MarkFullRedraw();
     }
 
     /// <summary>A right click or long press, in board CSS pixels: flag.</summary>
@@ -188,7 +210,7 @@ public sealed class Minesweeper
 
         bool flagged = !this.cells[column, row].Flagged;
         this.cells[column, row].Flagged = flagged;
-        this.NeedsRedraw = true;
+        this.dirty.Add((column, row));
 
         return flagged ? FlagResult.Placed : FlagResult.Removed;
     }
@@ -344,11 +366,11 @@ public sealed class Minesweeper
 
         if (this.cells[col, row].Adjacent > 0)
         {
-            this.cells[col, row].Revealed = true;
+            this.Reveal(col, row);
             return;
         }
 
-        this.cells[col, row].Revealed = true;
+        this.Reveal(col, row);
         this.visitedCells.Add((col, row));
 
         for (int c = col - 1; c <= col + 1; c++)
@@ -372,6 +394,31 @@ public sealed class Minesweeper
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Opens a cell and notes it for repainting. Guarded on the cell actually being shut:
+    /// the flood reaches a numbered cell from every neighbour that touches it, and noting
+    /// it once per arrival would have the drawer paint it eight times over.
+    /// </summary>
+    /// <param name="column">Cell column.</param>
+    /// <param name="row">Cell row.</param>
+    private void Reveal(int column, int row)
+    {
+        if (this.cells[column, row].Revealed)
+        {
+            return;
+        }
+
+        this.cells[column, row].Revealed = true;
+        this.dirty.Add((column, row));
+    }
+
+    /// <summary>Calls for the whole board to be repainted, superseding any cells noted so far.</summary>
+    private void MarkFullRedraw()
+    {
+        this.NeedsFullRedraw = true;
+        this.dirty.Clear();
     }
 
     private void Relayout()
