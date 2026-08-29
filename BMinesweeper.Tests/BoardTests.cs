@@ -77,13 +77,6 @@ public class BoardTests
         Assert.False(game[8, 8].Revealed);
     }
 
-    private static void Centre(Minesweeper game, int column, int row, out double x, out double y)
-    {
-        var (left, top, size) = game.Layout.CellRect(column, row);
-        x = left + (size / 2);
-        y = top + (size / 2);
-    }
-
     [Fact]
     public void EveryCellKnowsHowManyMinesTouchIt()
     {
@@ -115,6 +108,26 @@ public class BoardTests
         }
     }
 
+    [Fact]
+    public void HitTestMapsAPointBackToItsCell()
+    {
+        var game = new Minesweeper();
+        game.NewGame();
+        game.Resize(400, 400);
+
+        var (x, y, size) = game.Layout.CellRect(3, 5);
+
+        Assert.Equal((3, 5), game.Layout.HitTest(x + (size / 2), y + (size / 2)));
+        Assert.Null(game.Layout.HitTest(-1, -1));
+    }
+
+    private static void Centre(Minesweeper game, int column, int row, out double x, out double y)
+    {
+        var (left, top, size) = game.Layout.CellRect(column, row);
+        x = left + (size / 2);
+        y = top + (size / 2);
+    }
+
     private static int CountNeighbouringMines(Minesweeper game, int column, int row)
     {
         int mines = 0;
@@ -133,18 +146,5 @@ public class BoardTests
         }
 
         return mines;
-    }
-
-    [Fact]
-    public void HitTestMapsAPointBackToItsCell()
-    {
-        var game = new Minesweeper();
-        game.NewGame();
-        game.Resize(400, 400);
-
-        var (x, y, size) = game.Layout.CellRect(3, 5);
-
-        Assert.Equal((3, 5), game.Layout.HitTest(x + (size / 2), y + (size / 2)));
-        Assert.Null(game.Layout.HitTest(-1, -1));
     }
 }

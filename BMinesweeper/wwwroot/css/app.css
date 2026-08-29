@@ -141,18 +141,3 @@ html, body {
     background: #b0b0b0;
 }
 
-.haptic-switch {
-    /* The label around the iOS haptic shim (see game.js). Kept in the layout and merely
-       invisible, because WebKit will not fire the switch's haptic for a control it is not
-       rendering — so display: none, visibility: hidden, and zero size are all off the
-       table. The switch inside overflows this 1px box; opacity on the label hides it and
-       pointer-events keeps it out of the way. */
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    width: 1px;
-    height: 1px;
-    margin: 0;
-    opacity: 0;
-    pointer-events: none;
-}
