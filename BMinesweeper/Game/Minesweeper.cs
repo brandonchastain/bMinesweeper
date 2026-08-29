@@ -277,48 +277,49 @@ public sealed class Minesweeper
             this.cells[randCol, randRow].Mine = true;
         }
 
-        this.visitedCells.Clear();
-        FillAdjacent(0, 0);
+        this.FillAdjacent();
 
         this.minesPlaced = true;
     }
 
-    private void FillAdjacent(int col, int row)
+    /// <summary>
+    /// Counts, for every cell, how many mines touch it.
+    ///
+    /// A plain sweep of the grid rather than a walk outward from a corner: the count is a
+    /// property of each cell on its own, so reaching a cell was never the point, and a walk
+    /// left the counts at zero wherever it did not reach — the whole board when the corner
+    /// it started from was itself a mine, and any pocket the mines walled it out of
+    /// otherwise. Both showed up as a board of blanks that could not be played.
+    /// </summary>
+    private void FillAdjacent()
     {
-        if (visitedCells.Contains((col, row)))
+        for (int column = 0; column < this.Columns; column++)
         {
-            return;
-        }
-
-        if (this.cells[col, row].Mine)
-        {
-            return;
-        }
-        
-        // prevent recursions from coming back to this cell
-        this.visitedCells.Add((col, row));
-
-        int adjacentMines = 0;
-        for (int c = col - 1; c <= col + 1; c++)
-        {
-            for (int r = row - 1; r <= row + 1; r++)
+            for (int row = 0; row < this.Rows; row++)
             {
-                if (c >= 0 && c < this.Columns && r >= 0 && r < this.Rows)
+                if (this.cells[column, row].Mine)
                 {
-                    if (r != row || c != col)
-                    {
-                        FillAdjacent(c, r);
-                    }
+                    continue;
+                }
 
-                    if (this.cells[c, r].Mine)
+                int adjacent = 0;
+
+                for (int c = column - 1; c <= column + 1; c++)
+                {
+                    for (int r = row - 1; r <= row + 1; r++)
                     {
-                        adjacentMines++;
+                        bool inside = c >= 0 && c < this.Columns && r >= 0 && r < this.Rows;
+
+                        if (inside && !(c == column && r == row) && this.cells[c, r].Mine)
+                        {
+                            adjacent++;
+                        }
                     }
                 }
+
+                this.cells[column, row].Adjacent = adjacent;
             }
         }
-
-        this.cells[col, row].Adjacent = adjacentMines;
     }
 
     private void FloodFill(int col, int row)
