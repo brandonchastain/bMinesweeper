@@ -91,8 +91,7 @@ window.bMinesweeper = (() => {
     //
     // What is clicked is the label, not the checkbox inside it. WebKit plays the haptic
     // on the label's activation of the switch; a click dispatched straight at the input
-    // toggles it silently. wwwroot/haptic-test.html is a standalone probe of this and the
-    // other variants, for when a future iOS moves the goalposts again.
+    // toggles it silently.
     let hapticSwitch = null;
 
     function makeHapticSwitch() {
