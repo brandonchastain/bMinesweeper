@@ -88,6 +88,11 @@ window.bMinesweeper = (() => {
     // rather than display: none), and the feedback is the system's single fixed tap with
     // no say over length or strength. All of which is why the drawn flag, not this,
     // remains the feedback the game relies on.
+    //
+    // What is clicked is the label, not the checkbox inside it. WebKit plays the haptic
+    // on the label's activation of the switch; a click dispatched straight at the input
+    // toggles it silently. wwwroot/haptic-test.html is a standalone probe of this and the
+    // other variants, for when a future iOS moves the goalposts again.
     let hapticSwitch = null;
 
     function makeHapticSwitch() {
@@ -95,15 +100,19 @@ window.bMinesweeper = (() => {
             return null;
         }
 
+        const label = document.createElement('label');
+        label.className = 'haptic-switch';
+        label.setAttribute('aria-hidden', 'true');
+
         const input = document.createElement('input');
         input.type = 'checkbox';
         input.setAttribute('switch', '');
-        input.className = 'haptic-switch';
         input.tabIndex = -1;
-        input.setAttribute('aria-hidden', 'true');
-        document.body.appendChild(input);
 
-        return input;
+        label.appendChild(input);
+        document.body.appendChild(label);
+
+        return label;
     }
 
     function buzz(haptic) {
@@ -118,7 +127,12 @@ window.bMinesweeper = (() => {
 
         // Toggled, not set: which way the switch is left does not matter, only that it
         // moved. Nothing reads its value.
-        for (let i = 0; i < haptic.ticks; i++) {
+        //
+        // The first tick is fired now rather than on a zero timer, so it still lands
+        // inside the gesture that asked for it.
+        hapticSwitch.click();
+
+        for (let i = 1; i < haptic.ticks; i++) {
             setTimeout(() => hapticSwitch.click(), i * TICK_GAP_MS);
         }
     }
