@@ -1,3 +1,5 @@
+using System.Runtime.CompilerServices;
+
 namespace BMinesweeper.Game;
 
 /// <summary>
@@ -21,7 +23,7 @@ public sealed class Minesweeper
     public GameState State { get; private set; } = GameState.Playing;
     public bool NeedsRedraw { get; private set; } = true;
     public TimeSpan Elapsed { get; private set; }
-    public int MinesRemaining => this.Mines - this.Count(static c => c.Flagged);
+    public int SpacesRemaining => (this.Columns * this.Rows) - this.Mines - this.Count(static c => !c.Mine && c.Revealed);
     public Cell this[int column, int row] => this.cells[column, row];
 
     /// <summary>Deals a fresh board. Mines are not placed until the first reveal.</summary>
@@ -89,14 +91,40 @@ public sealed class Minesweeper
         var (column, row) = hit;
         this.EnsureMines(column, row);
 
-        // TODO: reveal the cell — flood-fill the run of zeroes, lose on a mine, and win
+        // Reveal the cell — flood-fill the run of zeroes, lose on a mine, and win
         // once every cell that is not a mine is open.
 
         this.visitedCells.Clear();
-        this.DFS(column, row, FloodFill);
+        FloodFill(column, row);
 
         this.cells[column, row].Revealed = true;
+
+        if (this.cells[column, row].Mine)
+        {
+            this.State = GameState.Lost;
+            this.RevealMines();
+        }
+        else if (this.SpacesRemaining == 0)
+        {
+            this.State = GameState.Won;
+            this.RevealMines();
+        }
+
         this.NeedsRedraw = true;
+    }
+
+    private void RevealMines()
+    {
+        for (int i = 0; i < this.Columns; i++)
+        {
+            for (int j = 0; j < this.Rows; j++)
+            {
+                if (this.cells[i, j].Mine)
+                {
+                    this.cells[i, j].Revealed = true;
+                }
+            }
+        }
     }
 
     /// <summary>A right click or long press, in board CSS pixels: flag.</summary>
@@ -163,21 +191,14 @@ public sealed class Minesweeper
         }
 
         this.visitedCells.Clear();
-        this.DFS(0, 0, FillAdjacent);
+        FillAdjacent(0, 0);
 
         this.minesPlaced = true;
     }
 
-    private void DFS(int col, int row, Action<int, int> act)
+    private void FillAdjacent(int col, int row)
     {
         if (visitedCells.Contains((col, row)))
-        {
-            return;
-        }
-        
-        this.visitedCells.Add((col, row));
-
-        if (col < 0 || col >= this.Columns || row < 0 || row >= this.Rows)
         {
             return;
         }
@@ -186,12 +207,10 @@ public sealed class Minesweeper
         {
             return;
         }
+        
+        // prevent recursions from coming back to this cell
+        this.visitedCells.Add((col, row));
 
-        act(col, row);
-    }
-
-    private void FillAdjacent(int col, int row)
-    {
         int adjacentMines = 0;
         for (int c = col - 1; c <= col + 1; c++)
         {
@@ -201,7 +220,7 @@ public sealed class Minesweeper
                 {
                     if (r != row || c != col)
                     {
-                        DFS(c, r, FillAdjacent);
+                        FillAdjacent(c, r);
                     }
 
                     if (this.cells[c, r].Mine)
@@ -217,6 +236,16 @@ public sealed class Minesweeper
 
     private void FloodFill(int col, int row)
     {
+        if (visitedCells.Contains((col, row)))
+        {
+            return;
+        }
+
+        if (this.cells[col, row].Mine)
+        {
+            return;
+        }
+
         if (this.cells[col, row].Adjacent > 0)
         {
             this.cells[col, row].Revealed = true;
@@ -224,25 +253,26 @@ public sealed class Minesweeper
         }
 
         this.cells[col, row].Revealed = true;
+        this.visitedCells.Add((col, row));
 
         for (int c = col - 1; c <= col + 1; c++)
         {
-            if (c >= 0 && c < this.Columns && row >= 0 && row < this.Rows)
+            for (int r = row - 1; r <= row + 1; r++)
             {
-                if (c != col)
+                if (c < 0 || c >= this.Columns || r < 0 || r >= this.Rows)
                 {
-                    DFS(c, row, FloodFill);
+                    continue;
                 }
-            }
-        }
 
-        for (int r = row - 1; r <= row + 1; r++)
-        {
-            if (col >= 0 && col < this.Columns && r >= 0 && r < this.Rows)
-            {
-                if (r != row)
+                int cdiff = Math.Abs(col - c);
+                int rdiff = Math.Abs(row - r);
+                bool isSelf = r == row && c == col;
+                bool isDiag = cdiff == rdiff;
+                bool isNonZero = this.cells[c, r].Adjacent > 0;
+
+                if (!isSelf && (!isDiag || isNonZero))
                 {
-                    DFS(col, r, FloodFill);
+                    FloodFill(c, r);
                 }
             }
         }

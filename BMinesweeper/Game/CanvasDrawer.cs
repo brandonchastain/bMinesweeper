@@ -41,12 +41,43 @@ public sealed class CanvasDrawer : IGameDrawer
         {
             for (int column = 0; column < layout.Columns; column++)
             {
-                await this.DrawCell(game[column, row], layout, column, row);
+                await this.DrawCell(game, game[column, row], layout, column, row);
+            }
+        }
+        
+        for (int row = 0; row < layout.Rows; row++)
+        {
+            for (int column = 0; column < layout.Columns; column++)
+            {
+                await this.DrawCellBorder(game, game[column, row], layout, column, row);
             }
         }
     }
 
-    private async Task DrawCell(Cell cell, BoardLayout layout, int column, int row)
+    private async Task DrawCellBorder(Minesweeper game, Cell cell, BoardLayout layout, int column, int row)
+    {
+        var (x, y, size) = layout.CellRect(column, row);
+
+        if (cell.Mine && game.State != GameState.Playing)
+        {
+            switch (game.State)
+            {
+                case GameState.Won:
+                    await this.canvas.SetStrokeStyleAsync("#00AA11");
+                    break;
+                case GameState.Lost:
+                    await this.canvas.SetStrokeStyleAsync("#ff0000");
+                    break;
+                default:
+                    throw new Exception("unsupported game state.");
+            }
+
+            await this.canvas.SetLineWidthAsync(10);
+            await this.canvas.StrokeRectAsync(x, y, size, size);
+        }        
+    }
+
+    private async Task DrawCell(Minesweeper game, Cell cell, BoardLayout layout, int column, int row)
     {
         var (x, y, size) = layout.CellRect(column, row);
 
