@@ -171,25 +171,6 @@ public sealed class Minesweeper
         }
     }
 
-    private void RevealMines()
-    {
-        for (int i = 0; i < this.Columns; i++)
-        {
-            for (int j = 0; j < this.Rows; j++)
-            {
-                if (this.cells[i, j].Mine)
-                {
-                    this.cells[i, j].Revealed = true;
-                }
-            }
-        }
-
-        // Every mine grows a border thicker than the cell it sits in, so the strokes spill
-        // over their neighbours and a per-cell repaint would leave pieces of them behind.
-        // This happens once per game, so painting the board whole costs nothing worth saving.
-        this.MarkFullRedraw();
-    }
-
     /// <summary>A right click or long press, in board CSS pixels: flag.</summary>
     /// <param name="x">Board x, in CSS pixels.</param>
     /// <param name="y">Board y, in CSS pixels.</param>
@@ -271,6 +252,25 @@ public sealed class Minesweeper
     /// </summary>
     /// <param name="safeColumn">Column of the first click.</param>
     /// <param name="safeRow">Row of the first click.</param>
+    private void RevealMines()
+    {
+        for (int i = 0; i < this.Columns; i++)
+        {
+            for (int j = 0; j < this.Rows; j++)
+            {
+                if (this.cells[i, j].Mine)
+                {
+                    this.cells[i, j].Revealed = true;
+                }
+            }
+        }
+
+        // Every mine grows a border thicker than the cell it sits in, so the strokes spill
+        // over their neighbours and a per-cell repaint would leave pieces of them behind.
+        // This happens once per game, so painting the board whole costs nothing worth saving.
+        this.MarkFullRedraw();
+    }
+
     private void EnsureMines(int safeColumn, int safeRow)
     {
         if (this.minesPlaced)

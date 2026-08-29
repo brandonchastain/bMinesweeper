@@ -66,73 +66,21 @@ window.bMinesweeper = (() => {
     // mis-pressed a cell they had already flagged knows it without looking. A press that
     // changed nothing stays silent — a buzz that means 'nothing happened' is noise.
     //
-    // Two ways to say it, because the platforms offer different vocabularies: a pattern
-    // for the Vibration API, and a count of system ticks for the iOS fallback below,
-    // which can only make one fixed tap and so has to spell the difference out in
-    // repeats instead of in length.
+    // Only where there is a vibrator to play it. iOS has no Vibration API — WebKit has
+    // never shipped it, in Safari or in any other iOS browser, since they are all WebKit
+    // underneath — and the switch-checkbox trick that stood in for one was closed off in
+    // iOS 26.5, which stopped script from toggling a switch to borrow the system tick.
+    // What survives there needs a finger on the control itself, before the touch begins,
+    // which a flag decided mid-press cannot arrange. So on iPhone the drawn flag is the
+    // feedback, which is what it always really was.
     const HAPTICS = {
-        Placed: { pattern: 35, ticks: 1 },
-        Removed: { pattern: [12, 45, 12], ticks: 2 },
+        Placed: 35,
+        Removed: [12, 45, 12],
     };
 
-    // Far enough apart to be felt as two taps rather than one smeared one.
-    const TICK_GAP_MS = 90;
-
-    // iOS has no Vibration API — WebKit has never shipped it, in Safari or in any other
-    // iOS browser, since they are all WebKit underneath. What it does have, since 17.4,
-    // is the switch checkbox, which fires the system's own haptic when it toggles. So on
-    // a phone that cannot vibrate, a hidden switch is flipped instead.
-    //
-    // This is borrowed behaviour, not an API: it can go away in any iOS release, the
-    // control has to actually be rendered for the haptic to fire (hence the styling
-    // rather than display: none), and the feedback is the system's single fixed tap with
-    // no say over length or strength. All of which is why the drawn flag, not this,
-    // remains the feedback the game relies on.
-    //
-    // What is clicked is the label, not the checkbox inside it. WebKit plays the haptic
-    // on the label's activation of the switch; a click dispatched straight at the input
-    // toggles it silently.
-    let hapticSwitch = null;
-
-    function makeHapticSwitch() {
-        if (navigator.vibrate || !('switch' in document.createElement('input'))) {
-            return null;
-        }
-
-        const label = document.createElement('label');
-        label.className = 'haptic-switch';
-        label.setAttribute('aria-hidden', 'true');
-
-        const input = document.createElement('input');
-        input.type = 'checkbox';
-        input.setAttribute('switch', '');
-        input.tabIndex = -1;
-
-        label.appendChild(input);
-        document.body.appendChild(label);
-
-        return label;
-    }
-
-    function buzz(haptic) {
+    function buzz(pattern) {
         if (navigator.vibrate) {
-            navigator.vibrate(haptic.pattern);
-            return;
-        }
-
-        if (!hapticSwitch) {
-            return;
-        }
-
-        // Toggled, not set: which way the switch is left does not matter, only that it
-        // moved. Nothing reads its value.
-        //
-        // The first tick is fired now rather than on a zero timer, so it still lands
-        // inside the gesture that asked for it.
-        hapticSwitch.click();
-
-        for (let i = 1; i < haptic.ticks; i++) {
-            setTimeout(() => hapticSwitch.click(), i * TICK_GAP_MS);
+            navigator.vibrate(pattern);
         }
     }
 
@@ -141,10 +89,10 @@ window.bMinesweeper = (() => {
         // moved, and a buzz for a press that landed on an open cell would be a lie.
         return dotNet.invokeMethodAsync('OnLongPress', point.x, point.y)
             .then((result) => {
-                const haptic = HAPTICS[result];
+                const pattern = HAPTICS[result];
 
-                if (haptic !== undefined) {
-                    buzz(haptic);
+                if (pattern !== undefined) {
+                    buzz(pattern);
                 }
             });
     }
@@ -216,8 +164,6 @@ window.bMinesweeper = (() => {
             dotNet = dotNetRef;
             const board = document.getElementById('board');
             canvas = board.querySelector('canvas');
-            hapticSwitch = makeHapticSwitch();
-
             resize();
 
             // The board's own size is what matters, and on a phone it changes for reasons
