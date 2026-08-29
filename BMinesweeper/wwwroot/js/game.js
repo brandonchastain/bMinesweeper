@@ -57,82 +57,81 @@ window.bMinesweeper = (() => {
     function cancelPress() {
         if (press) {
             clearTimeout(press.timer);
+
+            if (!press.flagged) {
+                silenceHaptic();
+            }
+
             press = null;
         }
     }
 
-    // The two things a press can do, told apart by feel: planting a flag is one firm
-    // buzz, and pulling one back up is a lighter double tick, so a player who
-    // mis-pressed a cell they had already flagged knows it without looking. A press that
-    // changed nothing stays silent — a buzz that means 'nothing happened' is noise.
-    //
-    // Two ways to say it, because the platforms offer different vocabularies: a pattern
-    // for the Vibration API, and a count of system ticks for the iOS fallback below,
-    // which can only make one fixed tap and so has to spell the difference out in
-    // repeats instead of in length.
+    // The two things a press can do, told apart by feel where the platform allows it:
+    // planting a flag is one firm buzz, and pulling one back up is a lighter double tick,
+    // so a player who mis-pressed a cell they had already flagged knows it without
+    // looking. A press that changed nothing stays silent — a buzz that means 'nothing
+    // happened' is noise.
     const HAPTICS = {
-        Placed: { pattern: 35, ticks: 1 },
-        Removed: { pattern: [12, 45, 12], ticks: 2 },
+        Placed: 35,
+        Removed: [12, 45, 12],
     };
 
-    // Far enough apart to be felt as two taps rather than one smeared one.
-    const TICK_GAP_MS = 90;
-
     // iOS has no Vibration API — WebKit has never shipped it, in Safari or in any other
-    // iOS browser, since they are all WebKit underneath. What it does have, since 17.4,
-    // is the switch checkbox, which fires the system's own haptic when it toggles. So on
-    // a phone that cannot vibrate, a hidden switch is flipped instead.
+    // iOS browser, since they are all WebKit underneath. What it does have, since 17.4, is
+    // the switch checkbox, which plays the system's own tick when a finger toggles it. So
+    // on a phone that cannot vibrate, an invisible switch is laid over the board and the
+    // press that flags a cell is also, unknowingly, a press on that switch.
     //
-    // This is borrowed behaviour, not an API: it can go away in any iOS release, the
-    // control has to actually be rendered for the haptic to fire (hence the styling
-    // rather than display: none), and the feedback is the system's single fixed tap with
-    // no say over length or strength. All of which is why the drawn flag, not this,
-    // remains the feedback the game relies on.
+    // It has to be the finger: iOS 26.5 closed the last path that let script fire the tick
+    // by toggling a switch itself, so the control must be under the touch before the touch
+    // starts. Which is why this is an overlay and not a hidden element clicked from the
+    // long-press timer — that shape worked until 26.5 and is silent now.
     //
-    // What is clicked is the label, not the checkbox inside it. WebKit plays the haptic
-    // on the label's activation of the switch; a click dispatched straight at the input
-    // toggles it silently.
+    // Two consequences, both visible in the feel of the game. The tick lands when the
+    // finger lifts rather than when the flag appears, because that is when a switch
+    // commits its toggle. And it is one fixed tick, so placing and removing feel alike;
+    // the double tick above survives only on the platforms with a real vibrator.
     let hapticSwitch = null;
 
-    function makeHapticSwitch() {
+    // Long enough to outlast the activation being swallowed, short enough that the next
+    // press cannot beat it back.
+    const RE_ARM_MS = 100;
+
+    function makeHapticSwitch(board) {
         if (navigator.vibrate || !('switch' in document.createElement('input'))) {
             return null;
         }
 
-        const label = document.createElement('label');
-        label.className = 'haptic-switch';
-        label.setAttribute('aria-hidden', 'true');
-
         const input = document.createElement('input');
         input.type = 'checkbox';
         input.setAttribute('switch', '');
+        input.className = 'haptic-switch';
         input.tabIndex = -1;
+        input.setAttribute('aria-hidden', 'true');
 
-        label.appendChild(input);
-        document.body.appendChild(label);
+        // Inside the board, so it covers exactly what a finger can press.
+        board.appendChild(input);
 
-        return label;
+        return input;
     }
 
-    function buzz(haptic) {
+    // The switch is live by default, because it has to be live before a finger lands to
+    // tick at all. Silencing is therefore the active step: a press that turns out not to
+    // have flagged anything disables the control before its lift can commit the toggle,
+    // and re-arms once that lift is spent. Nothing reads the switch's value; only whether
+    // it was allowed to move.
+    function silenceHaptic() {
+        if (!hapticSwitch || hapticSwitch.disabled) {
+            return;
+        }
+
+        hapticSwitch.disabled = true;
+        setTimeout(() => { hapticSwitch.disabled = false; }, RE_ARM_MS);
+    }
+
+    function buzz(pattern) {
         if (navigator.vibrate) {
-            navigator.vibrate(haptic.pattern);
-            return;
-        }
-
-        if (!hapticSwitch) {
-            return;
-        }
-
-        // Toggled, not set: which way the switch is left does not matter, only that it
-        // moved. Nothing reads its value.
-        //
-        // The first tick is fired now rather than on a zero timer, so it still lands
-        // inside the gesture that asked for it.
-        hapticSwitch.click();
-
-        for (let i = 1; i < haptic.ticks; i++) {
-            setTimeout(() => hapticSwitch.click(), i * TICK_GAP_MS);
+            navigator.vibrate(pattern);
         }
     }
 
@@ -141,11 +140,17 @@ window.bMinesweeper = (() => {
         // moved, and a buzz for a press that landed on an open cell would be a lie.
         return dotNet.invokeMethodAsync('OnLongPress', point.x, point.y)
             .then((result) => {
-                const haptic = HAPTICS[result];
+                const pattern = HAPTICS[result];
 
-                if (haptic !== undefined) {
-                    buzz(haptic);
+                if (pattern === undefined) {
+                    // Long-pressed a cell that was already open, or otherwise took no
+                    // flag. The answer usually beats the finger off the glass, which is
+                    // what lets the tick be called off in time.
+                    silenceHaptic();
+                    return;
                 }
+
+                buzz(pattern);
             });
     }
 
@@ -196,6 +201,14 @@ window.bMinesweeper = (() => {
         }
 
         const { flagged, point } = press;
+
+        // Before anything else: a release that is not the end of a flag must not be
+        // allowed to toggle the switch under the board, and this is the last moment it can
+        // be stopped.
+        if (!flagged) {
+            silenceHaptic();
+        }
+
         cancelPress();
 
         // A press that already flagged must not also reveal on release.
@@ -216,7 +229,7 @@ window.bMinesweeper = (() => {
             dotNet = dotNetRef;
             const board = document.getElementById('board');
             canvas = board.querySelector('canvas');
-            hapticSwitch = makeHapticSwitch();
+            hapticSwitch = makeHapticSwitch(board);
 
             resize();
 
