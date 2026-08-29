@@ -61,11 +61,79 @@ window.bMinesweeper = (() => {
         }
     }
 
+    // The two things a press can do, told apart by feel: planting a flag is one firm
+    // buzz, and pulling one back up is a lighter double tick, so a player who
+    // mis-pressed a cell they had already flagged knows it without looking. A press that
+    // changed nothing stays silent — a buzz that means 'nothing happened' is noise.
+    //
+    // Two ways to say it, because the platforms offer different vocabularies: a pattern
+    // for the Vibration API, and a count of system ticks for the iOS fallback below,
+    // which can only make one fixed tap and so has to spell the difference out in
+    // repeats instead of in length.
+    const HAPTICS = {
+        Placed: { pattern: 35, ticks: 1 },
+        Removed: { pattern: [12, 45, 12], ticks: 2 },
+    };
+
+    // Far enough apart to be felt as two taps rather than one smeared one.
+    const TICK_GAP_MS = 90;
+
+    // iOS has no Vibration API — WebKit has never shipped it, in Safari or in any other
+    // iOS browser, since they are all WebKit underneath. What it does have, since 17.4,
+    // is the switch checkbox, which fires the system's own haptic when it toggles. So on
+    // a phone that cannot vibrate, a hidden switch is flipped instead.
+    //
+    // This is borrowed behaviour, not an API: it can go away in any iOS release, the
+    // control has to actually be rendered for the haptic to fire (hence the styling
+    // rather than display: none), and the feedback is the system's single fixed tap with
+    // no say over length or strength. All of which is why the drawn flag, not this,
+    // remains the feedback the game relies on.
+    let hapticSwitch = null;
+
+    function makeHapticSwitch() {
+        if (navigator.vibrate || !('switch' in document.createElement('input'))) {
+            return null;
+        }
+
+        const input = document.createElement('input');
+        input.type = 'checkbox';
+        input.setAttribute('switch', '');
+        input.className = 'haptic-switch';
+        input.tabIndex = -1;
+        input.setAttribute('aria-hidden', 'true');
+        document.body.appendChild(input);
+
+        return input;
+    }
+
+    function buzz(haptic) {
+        if (navigator.vibrate) {
+            navigator.vibrate(haptic.pattern);
+            return;
+        }
+
+        if (!hapticSwitch) {
+            return;
+        }
+
+        // Toggled, not set: which way the switch is left does not matter, only that it
+        // moved. Nothing reads its value.
+        for (let i = 0; i < haptic.ticks; i++) {
+            setTimeout(() => hapticSwitch.click(), i * TICK_GAP_MS);
+        }
+    }
+
     function flag(point) {
-        // A flag on touch has no visible cursor behind it, so the phone confirms the
-        // press landed. Absent on iOS, which is why it is not the only feedback.
-        navigator.vibrate?.(20);
-        dotNet.invokeMethodAsync('OnLongPress', point.x, point.y);
+        // Answered rather than anticipated: only the game knows whether a flag actually
+        // moved, and a buzz for a press that landed on an open cell would be a lie.
+        return dotNet.invokeMethodAsync('OnLongPress', point.x, point.y)
+            .then((result) => {
+                const haptic = HAPTICS[result];
+
+                if (haptic !== undefined) {
+                    buzz(haptic);
+                }
+            });
     }
 
     function onPointerDown(event) {
@@ -135,6 +203,7 @@ window.bMinesweeper = (() => {
             dotNet = dotNetRef;
             const board = document.getElementById('board');
             canvas = board.querySelector('canvas');
+            hapticSwitch = makeHapticSwitch();
 
             resize();
 

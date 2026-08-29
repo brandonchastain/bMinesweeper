@@ -19,10 +19,16 @@ public sealed class Minesweeper
     public int Columns { get; private set; }
     public int Rows { get; private set; }
     public int Mines { get; private set; }
+
+    /// <summary>How thickly this board was sown.</summary>
+    public Difficulty Difficulty { get; private set; } = Difficulty.Medium;
     public BoardLayout Layout { get; private set; }
     public GameState State { get; private set; } = GameState.Playing;
     public bool NeedsRedraw { get; private set; } = true;
     public TimeSpan Elapsed { get; private set; }
+    /// <summary>Mines the player has yet to account for: buried mines, less flags planted.</summary>
+    public int MinesRemaining => this.Mines - this.Count(static c => c.Flagged && !c.Revealed);
+
     public int SpacesRemaining => (this.Columns * this.Rows) - this.Mines - this.Count(static c => !c.Mine && c.Revealed);
     public Cell this[int column, int row] => this.cells[column, row];
 
@@ -51,9 +57,36 @@ public sealed class Minesweeper
     {
         this.width = width;
         this.height = height;
+
+        // The board is meant to fill the viewport, so the grid itself grows with it rather
+        // than sitting in a fixed 9x9 island. Only an untouched board may be re-dealt: once
+        // the mines are down, a URL bar sliding away must not throw the game away.
+        if (!this.minesPlaced)
+        {
+            var (columns, rows) = FitGrid(width, height);
+
+            if (columns != this.Columns || rows != this.Rows)
+            {
+                this.NewGame(columns, rows, MinesFor(columns, rows, this.Difficulty));
+                return;
+            }
+        }
+
         this.Relayout();
         this.NeedsRedraw = true;
     }
+
+    /// <summary>Deals a fresh board sized to the current viewport.</summary>
+    /// <param name="difficulty">How thickly to sow the mines.</param>
+    public void NewGame(Difficulty difficulty)
+    {
+        var (columns, rows) = FitGrid(this.width, this.height);
+        this.Difficulty = difficulty;
+        this.NewGame(columns, rows, MinesFor(columns, rows, difficulty));
+    }
+
+    /// <summary>Deals a fresh board sized to the current viewport, at the current difficulty.</summary>
+    public void NewGame() => this.NewGame(this.Difficulty);
 
     /// <summary>One animation frame. The clock is the only thing that moves on its own.</summary>
     /// <param name="timestamp">Time since the page loaded.</param>
@@ -89,6 +122,14 @@ public sealed class Minesweeper
         }
 
         var (column, row) = hit;
+
+        // A flag is a blocker: it is the player's own note that this cell is not to be
+        // opened, so a click aimed at it does nothing until the flag comes off.
+        if (this.cells[column, row].Flagged)
+        {
+            return;
+        }
+
         this.EnsureMines(column, row);
 
         // Reveal the cell — flood-fill the run of zeroes, lose on a mine, and win
@@ -130,20 +171,26 @@ public sealed class Minesweeper
     /// <summary>A right click or long press, in board CSS pixels: flag.</summary>
     /// <param name="x">Board x, in CSS pixels.</param>
     /// <param name="y">Board y, in CSS pixels.</param>
-    public void OnFlag(double x, double y)
+    /// <returns>What the press did, so the host can answer it.</returns>
+    public FlagResult OnFlag(double x, double y)
     {
         if (this.State != GameState.Playing || this.Layout.HitTest(x, y) is not { } hit)
         {
-            return;
+            return FlagResult.None;
         }
 
         var (column, row) = hit;
 
-        if (!this.cells[column, row].Revealed)
+        if (this.cells[column, row].Revealed)
         {
-            this.cells[column, row].Flagged = !this.cells[column, row].Flagged;
-            this.NeedsRedraw = true;
+            return FlagResult.None;
         }
+
+        bool flagged = !this.cells[column, row].Flagged;
+        this.cells[column, row].Flagged = flagged;
+        this.NeedsRedraw = true;
+
+        return flagged ? FlagResult.Placed : FlagResult.Removed;
     }
 
     /// <summary>A key press, by <c>KeyboardEvent.code</c>.</summary>
@@ -152,8 +199,48 @@ public sealed class Minesweeper
     {
         if (code == "KeyN")
         {
-            this.NewGame(this.Columns, this.Rows, this.Mines);
+            this.NewGame(this.Difficulty);
         }
+    }
+
+    /// <summary>
+    /// Picks a grid that fills the viewport at a comfortable finger-sized cell. Clamped at
+    /// both ends: a handful of cells is not a game, and a hundred is not a target.
+    /// </summary>
+    /// <param name="width">Board width, in CSS pixels.</param>
+    /// <param name="height">Board height, in CSS pixels.</param>
+    /// <returns>Columns and rows to deal.</returns>
+    private static (int Columns, int Rows) FitGrid(double width, double height)
+    {
+        if (width <= 0 || height <= 0)
+        {
+            return (9, 9);
+        }
+
+        // Roughly a fingertip on a phone, a little larger on a desktop where the pointer is
+        // precise but the window is wide enough that tiny cells would multiply endlessly.
+        double target = Math.Min(width, height) < 600 ? 40 : 46;
+
+        return (
+            Math.Clamp((int)Math.Round((width - 24) / target), 5, 40),
+            Math.Clamp((int)Math.Round((height - 24) / target), 5, 40));
+    }
+
+    /// <summary>How many mines a board of this size gets at this difficulty.</summary>
+    /// <param name="columns">Cells across.</param>
+    /// <param name="rows">Cells down.</param>
+    /// <param name="difficulty">How thickly to sow them.</param>
+    /// <returns>A mine count, never zero.</returns>
+    private static int MinesFor(int columns, int rows, Difficulty difficulty)
+    {
+        double density = difficulty switch
+        {
+            Difficulty.Easy => 0.10,
+            Difficulty.Expert => 0.21,
+            _ => 0.16,
+        };
+
+        return Math.Max(1, (int)Math.Round(columns * rows * density));
     }
 
     /// <summary>
@@ -242,6 +329,14 @@ public sealed class Minesweeper
         }
 
         if (this.cells[col, row].Mine)
+        {
+            return;
+        }
+
+        // The flood stops at a flag rather than rolling over it. Losing a flag you placed
+        // deliberately — and the reasoning behind it — to a spreading reveal is worse than
+        // the cell staying shut, which you can always undo.
+        if (this.cells[col, row].Flagged)
         {
             return;
         }

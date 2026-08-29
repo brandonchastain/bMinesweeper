@@ -3,6 +3,24 @@
 @inject IJSRuntime JS
 @inject ILogger<Home> Logger
 
+<div id="toolbar">
+    <div class="panel">
+        <div class="led" title="Mines left to flag">@game.MinesRemaining.ToString("000")</div>
+
+        <button class="face" type="button" title="New game" @onclick="StartNewGame">@FaceGlyph</button>
+
+        <div class="led" title="Time elapsed">@Clock</div>
+    </div>
+
+    <div class="levels">
+        @foreach (var level in Levels)
+        {
+            <button class="level @(game.Difficulty == level ? "on" : null)" type="button"
+                    @onclick="() => StartNewGame(level)">@level.ToString().ToUpperInvariant()</button>
+        }
+    </div>
+</div>
+
 <div id="board" tabindex="0"
      @oncontextmenu:preventDefault="true"
      @onkeydown="HandleKeyDown" @onkeydown:preventDefault="true">
@@ -19,6 +37,27 @@
     private DotNetObjectReference<Home>? selfRef;
     private bool faulted;
     private bool rendered;
+
+    // The toolbar is the only markup that changes, so it drives rendering: the board is
+    // painted imperatively and must not drag a render tree walk behind every click.
+    private bool uiDirty;
+    private GameState shownState = GameState.Playing;
+    private int shownMines = -1;
+    private int shownSeconds = -1;
+
+    private static readonly Difficulty[] Levels =
+        Enum.GetValues<Difficulty>();
+
+    // Three digits and stuck there: the classic clock rolls at 999 rather than growing a
+    // digit and shoving the rest of the toolbar sideways.
+    private string Clock => Math.Min(999, (int)game.Elapsed.TotalSeconds).ToString("000");
+
+    private string FaceGlyph => game.State switch
+    {
+        GameState.Won => "\U0001F60E",
+        GameState.Lost => "\U0001F635",
+        _ => "\U0001F642",
+    };
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -50,8 +89,11 @@
     public void OnTap(double x, double y) => game.OnClick(x, y);
 
     /// <summary>A right click or a long press: flag.</summary>
+    /// <param name="x">Board x, in CSS pixels.</param>
+    /// <param name="y">Board y, in CSS pixels.</param>
+    /// <returns>What the press did, named for JS, which buzzes the phone accordingly.</returns>
     [JSInvokable]
-    public void OnLongPress(double x, double y) => game.OnFlag(x, y);
+    public string OnLongPress(double x, double y) => game.OnFlag(x, y).ToString();
 
     [JSInvokable]
     public async Task OnFrame(double timestampMs)
@@ -64,6 +106,19 @@
         try
         {
             game.Update(TimeSpan.FromMilliseconds(timestampMs));
+
+            // The face and the mine counter live in markup, so the frame loop is where a
+            // win, a loss, or a re-dealt board gets noticed.
+            int seconds = Math.Min(999, (int)game.Elapsed.TotalSeconds);
+
+            if (game.State != shownState || game.MinesRemaining != shownMines || seconds != shownSeconds)
+            {
+                shownState = game.State;
+                shownMines = game.MinesRemaining;
+                shownSeconds = seconds;
+                uiDirty = true;
+                StateHasChanged();
+            }
 
             // The board is static almost all the time and the canvas keeps the last frame,
             // so redrawing an unchanged board is pure waste.
@@ -84,13 +139,30 @@
         }
     }
 
+    private void StartNewGame() => game.NewGame();
+
+    // Picking a level deals a new board: a board is defined by its mines, and sowing more
+    // into a game in progress would rewrite what the player has already deduced.
+    private void StartNewGame(Difficulty level)
+    {
+        game.NewGame(level);
+        uiDirty = true;
+    }
+
     private void HandleKeyDown(KeyboardEventArgs e) => game.OnKeyDown(e.Code);
 
-    // The markup is one static div and a canvas, and the picture inside it is painted
-    // imperatively from the frame loop. Blazor re-renders a component after every event
-    // handler it owns, so without this each click and keystroke walks the render tree to
-    // produce the markup it produced last time.
-    protected override bool ShouldRender() => !rendered;
+    // Blazor re-renders a component after every event handler it owns, so without this each
+    // tap and keystroke walks the render tree to produce the markup it produced last time.
+    protected override bool ShouldRender()
+    {
+        if (!rendered || uiDirty)
+        {
+            uiDirty = false;
+            return true;
+        }
+
+        return false;
+    }
 
     public void Dispose() => selfRef?.Dispose();
 }
